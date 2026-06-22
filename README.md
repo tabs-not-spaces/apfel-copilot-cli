@@ -88,6 +88,14 @@ APFEL_MAX_TOOLS=8 python3 apfel_proxy_v2.py   # port 8899
 # point Copilot CLI BYOK at http://localhost:8899/v1, tools enabled
 ```
 
+Or via PowerShell launcher (auto-starts v2 on port 8899):
+
+```powershell
+./copilot-apfel.ps1 -ProxyVariant v2 -MaxTools 4
+```
+
+(bash launcher = v1 only; use the raw `python3 apfel_proxy_v2.py` command above.)
+
 Knobs: `APFEL_PROXY_V2_PORT`, `APFEL_MAX_TOOLS`, `APFEL_TOOL_TOKENS`,
 `APFEL_SYS_TOKENS`, `APFEL_HIST_TOKENS`, `APFEL_OUTPUT_CAP`.
 

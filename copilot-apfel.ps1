@@ -20,7 +20,18 @@
     Base URL of the apfel OpenAI-compatible server.
 
 .PARAMETER ProxyPort
-    TCP port the context-fitting proxy listens on.
+    TCP port the context-fitting proxy listens on. When omitted, defaults to
+    8898 for the v1 proxy and 8899 for the v2 proxy.
+
+.PARAMETER ProxyVariant
+    Which proxy to route through:
+        v1 - apfel_proxy.py    (strips tools; working CHAT only; default)
+        v2 - apfel_proxy_v2.py (experimental tool-RAG agent; blocked on model
+             tool-call fidelity, plumbing runs but the agent loop fails).
+
+.PARAMETER MaxTools
+    v2 only. Upper bound on tool schemas the tool-RAG selects per turn
+    (sets APFEL_MAX_TOOLS). Ignored for v1.
 
 .PARAMETER Model
     apfel model id reported by the server.
@@ -46,6 +57,9 @@
     ./copilot-apfel.ps1 -ProxyPort 9001
 
 .EXAMPLE
+    ./copilot-apfel.ps1 -ProxyVariant v2 -MaxTools 4   # experimental agent
+
+.EXAMPLE
     ./copilot-apfel.ps1            # interactive session
 #>
 [CmdletBinding()]
@@ -56,7 +70,15 @@ param(
 
     [Parameter()]
     [ValidateRange(1, 65535)]
-    [int] $ProxyPort = 8898,
+    [int] $ProxyPort,
+
+    [Parameter()]
+    [ValidateSet('v1', 'v2')]
+    [string] $ProxyVariant = 'v1',
+
+    [Parameter()]
+    [ValidateRange(1, 226)]
+    [int] $MaxTools = 4,
 
     [Parameter()]
     [ValidateNotNullOrEmpty()]
@@ -201,7 +223,14 @@ function Start-ApfelProxy {
 
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
-        [string] $LogDirectory
+        [string] $LogDirectory,
+
+        [Parameter()]
+        [ValidateNotNullOrEmpty()]
+        [string] $PortEnvName = 'APFEL_PROXY_PORT',
+
+        [Parameter()]
+        [hashtable] $ExtraEnvironment = @{}
     )
 
     if (Test-ApfelEndpoint -BaseUrl $BaseUrl) {
@@ -215,10 +244,14 @@ function Start-ApfelProxy {
         throw "Neither 'python3' nor 'python' found on PATH; required to run apfel_proxy.py."
     }
 
-    if ($PSCmdlet.ShouldProcess("apfel_proxy.py on :$Port", 'Start')) {
-        Write-Information -MessageData "starting apfel_proxy.py on :$Port..." -InformationAction Continue
+    $proxyName = Split-Path -Leaf $ScriptPath
+    if ($PSCmdlet.ShouldProcess("$proxyName on :$Port", 'Start')) {
+        Write-Information -MessageData "starting $proxyName on :$Port..." -InformationAction Continue
         $proxyEnvironment = @{
-            APFEL_PROXY_PORT = "$Port"
+            $PortEnvName = "$Port"
+        }
+        foreach ($key in $ExtraEnvironment.Keys) {
+            $proxyEnvironment[$key] = "$($ExtraEnvironment[$key])"
         }
         $startParams = @{
             FilePath               = $python.Source
@@ -291,6 +324,14 @@ function Invoke-CopilotApfel {
         [ValidateRange(1, 65535)]
         [int] $ProxyPort,
 
+        [Parameter()]
+        [ValidateSet('v1', 'v2')]
+        [string] $ProxyVariant = 'v1',
+
+        [Parameter()]
+        [ValidateRange(1, 226)]
+        [int] $MaxTools = 4,
+
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
         [string] $Model,
@@ -317,12 +358,30 @@ function Invoke-CopilotApfel {
     }
 
     $scriptRoot   = Split-Path -Parent $PSCommandPath
-    $proxyScript  = Join-Path $scriptRoot 'apfel_proxy.py'
+    if ($ProxyVariant -eq 'v2') {
+        $proxyScript = Join-Path $scriptRoot 'apfel_proxy_v2.py'
+        $portEnvName = 'APFEL_PROXY_V2_PORT'
+        $extraEnv    = @{ APFEL_MAX_TOOLS = $MaxTools }
+    }
+    else {
+        $proxyScript = Join-Path $scriptRoot 'apfel_proxy.py'
+        $portEnvName = 'APFEL_PROXY_PORT'
+        $extraEnv    = @{}
+    }
     $proxyUrl     = "http://localhost:$ProxyPort/v1"
     $logDirectory = [System.IO.Path]::GetTempPath()
 
     Start-ApfelServer -BaseUrl $ApfelUrl -LogDirectory $logDirectory
-    Start-ApfelProxy  -BaseUrl $proxyUrl -Port $ProxyPort -ScriptPath $proxyScript -LogDirectory $logDirectory
+
+    $proxyParams = @{
+        BaseUrl          = $proxyUrl
+        Port             = $ProxyPort
+        ScriptPath       = $proxyScript
+        LogDirectory     = $logDirectory
+        PortEnvName      = $portEnvName
+        ExtraEnvironment = $extraEnv
+    }
+    Start-ApfelProxy @proxyParams
 
     $providerParams = @{
         BaseUrl         = $proxyUrl
@@ -355,9 +414,16 @@ if ($MyInvocation.InvocationName -ne '.') {
         $ProxyPort = [int] $env:APFEL_PROXY_PORT
     }
 
+    # Resolve the default proxy port from the variant when the caller gave none.
+    if (-not $ProxyPort) {
+        $ProxyPort = if ($ProxyVariant -eq 'v2') { 8899 } else { 8898 }
+    }
+
     $invokeParams = @{
         ApfelUrl        = $ApfelUrl
         ProxyPort       = $ProxyPort
+        ProxyVariant    = $ProxyVariant
+        MaxTools        = $MaxTools
         Model           = $Model
         MaxPromptTokens = $MaxPromptTokens
         MaxOutputTokens = $MaxOutputTokens
