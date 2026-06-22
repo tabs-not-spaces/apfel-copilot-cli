@@ -1,0 +1,22 @@
+<svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="apfel-copilot-cli logo">
+  <defs>
+    <linearGradient id="apple" x1="40" y1="55" x2="160" y2="185" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#34C759"/>
+      <stop offset="1" stop-color="#1E8E3E"/>
+    </linearGradient>
+  </defs>
+
+  <!-- leaf -->
+  <path d="M104 40c10-16 28-20 40-18-2 14-12 28-30 28-6 0-10-4-10-10z" fill="#2E7D32"/>
+  <!-- stem -->
+  <path d="M100 44c0-10 2-18 6-24" stroke="#5D4037" stroke-width="6" stroke-linecap="round"/>
+
+  <!-- apple body (two lobes) -->
+  <path d="M100 56c-14-14-40-16-54-2C30 70 28 102 40 130c8 18 20 34 32 34 8 0 12-4 28-4s20 4 28 4c12 0 24-16 32-34 12-28 10-60-6-76-14-14-40-12-54 2z" fill="url(#apple)"/>
+
+  <!-- terminal prompt carved in white -->
+  <g stroke="#FFFFFF" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M74 96l20 18-20 18"/>
+    <path d="M104 138h26"/>
+  </g>
+</svg>
