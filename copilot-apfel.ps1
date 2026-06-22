@@ -11,10 +11,15 @@
     system prompt ~6.2k), which overflows apfel's hard 4096-token context window:
         "400 Input exceeds the 4096-token context window."
 
-    apfel_proxy.py strips tool schemas, truncates the system prompt, and rolls
-    history into local files (~/.apfel-copilot/) so each request fits 4096.
-    Because tools are stripped, this is a working CHAT against the on-device
-    model, NOT the full file-editing / shell agent. That is the price of 4096.
+    Two proxies fit each request into 4096 tokens:
+        v2 - apfel_proxy_v2.py (default). Constrained-decoding AGENT bridge:
+             uses apfel's json_schema response_format (Apple guided generation)
+             to drive tool routing + argument filling, then synthesises clean
+             OpenAI tool_calls. Delivers the full file-editing / shell agent.
+        v1 - apfel_proxy.py. Strips tool schemas; working CHAT only. Legacy
+             fallback, kept for plain conversation.
+
+    Both roll history into local files (~/.apfel-copilot/) so each request fits.
 
 .PARAMETER ApfelUrl
     Base URL of the apfel OpenAI-compatible server.
@@ -25,9 +30,9 @@
 
 .PARAMETER ProxyVariant
     Which proxy to route through:
-        v1 - apfel_proxy.py    (strips tools; working CHAT only; default)
-        v2 - apfel_proxy_v2.py (experimental tool-RAG agent; blocked on model
-             tool-call fidelity, plumbing runs but the agent loop fails).
+        v2 - apfel_proxy_v2.py (default). Constrained-decoding agent: full
+             file-editing / shell agent on the local model.
+        v1 - apfel_proxy.py    (strips tools; working CHAT only; legacy).
 
 .PARAMETER MaxTools
     v2 only. Upper bound on tool schemas the tool-RAG selects per turn
@@ -37,7 +42,9 @@
     apfel model id reported by the server.
 
 .PARAMETER MaxPromptTokens
-    BYOK prompt-token budget advertised to Copilot CLI.
+    Prompt-token window advertised to Copilot CLI. The proxy fits each request
+    into apfel's real 4096 internally, so advertise a large window here to stop
+    Copilot CLI from auto-compacting (summarising) the conversation.
 
 .PARAMETER MaxOutputTokens
     BYOK output-token budget advertised to Copilot CLI.
@@ -57,7 +64,7 @@
     ./copilot-apfel.ps1 -ProxyPort 9001
 
 .EXAMPLE
-    ./copilot-apfel.ps1 -ProxyVariant v2 -MaxTools 4   # experimental agent
+    ./copilot-apfel.ps1 -ProxyVariant v1 -Prompt "Explain TCP/IP in one sentence."   # legacy chat
 
 .EXAMPLE
     ./copilot-apfel.ps1            # interactive session
@@ -74,19 +81,19 @@ param(
 
     [Parameter()]
     [ValidateSet('v1', 'v2')]
-    [string] $ProxyVariant = 'v1',
+    [string] $ProxyVariant = 'v2',
 
     [Parameter()]
     [ValidateRange(1, 226)]
-    [int] $MaxTools = 4,
+    [int] $MaxTools = 8,
 
     [Parameter()]
     [ValidateNotNullOrEmpty()]
     [string] $Model = 'apple-foundationmodel',
 
     [Parameter()]
-    [ValidateRange(1, 4096)]
-    [int] $MaxPromptTokens = 3500,
+    [ValidateRange(1, 1000000)]
+    [int] $MaxPromptTokens = 120000,
 
     [Parameter()]
     [ValidateRange(1, 4096)]
@@ -285,7 +292,7 @@ function Set-CopilotProviderEnvironment {
         [string] $Model,
 
         [Parameter(Mandatory)]
-        [ValidateRange(1, 4096)]
+        [ValidateRange(1, 1000000)]
         [int] $MaxPromptTokens,
 
         [Parameter(Mandatory)]
@@ -326,18 +333,18 @@ function Invoke-CopilotApfel {
 
         [Parameter()]
         [ValidateSet('v1', 'v2')]
-        [string] $ProxyVariant = 'v1',
+        [string] $ProxyVariant = 'v2',
 
         [Parameter()]
         [ValidateRange(1, 226)]
-        [int] $MaxTools = 4,
+        [int] $MaxTools = 8,
 
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
         [string] $Model,
 
         [Parameter(Mandatory)]
-        [ValidateRange(1, 4096)]
+        [ValidateRange(1, 1000000)]
         [int] $MaxPromptTokens,
 
         [Parameter(Mandatory)]

@@ -16,14 +16,17 @@ Copilot CLI  --(COPILOT_PROVIDER_* env, OpenAI wire)-->  proxy  -->  apfel --ser
 ```
 
 - `copilot-apfel.sh` / `copilot-apfel.ps1` — launchers. They start `apfel --serve`
-  and a proxy, export the `COPILOT_PROVIDER_*` BYOK env, then exec `copilot`.
-- `apfel_proxy.py` — v1, **production**. Intercepts `POST /v1/chat/completions`,
-  strips all tool schemas, truncates the system prompt, rolls history to files,
-  and forwards a request that fits apfel's window. Result: chat only.
-- `apfel_proxy_v2.py` — **experimental**. Instead of stripping tools, it does
-  lexical tool-RAG to keep a relevant subset per turn so the agent can call tools.
-  Pipeline works; the on-device model's tool-call fidelity does not (see README
-  "v2" section). Keep v1 as the stable source of truth; do not fold v2 into it.
+  and a proxy, export the `COPILOT_PROVIDER_*` BYOK env, then exec `copilot`. Both
+  default to the **v2** proxy; pass `v1` (`-ProxyVariant v1` / `APFEL_PROXY_VARIANT=v1`)
+  for legacy chat.
+- `apfel_proxy_v2.py` — **default / first-class**. Constrained-decoding agent
+  bridge. It does NOT forward Copilot's tools verbatim. Each turn: clean the
+  request, select a small tool set (always seed the core tools), ROUTE with a
+  constrained boolean+enum schema, then fill args with a flat per-tool
+  `json_schema` (Apple guided generation), and synthesise clean OpenAI
+  `tool_calls`. This is the path to phase v1 out of.
+- `apfel_proxy.py` — **legacy, chat only**. Strips all tool schemas, truncates the
+  system prompt, rolls history to files. Kept as a fallback; do not fold v2 into it.
 
 The proxy is the **only** interception point. It rewrites `/v1/chat/completions`
 and passes every other path (e.g. `/v1/models`) straight through to apfel.
@@ -36,6 +39,20 @@ All proxy logic exists to fit requests into 4096. Token estimates use a
 **chars/4** approximation throughout — keep using it for budgeting; don't pull in
 a tokenizer library.
 
+Two facts the v2 design hinges on:
+
+- **Apple guided generation** (`response_format: json_schema`) forces structurally
+  valid output. Never trust the native `tools` tool-call path — it hallucinates.
+  v2 instead drives every decision through constrained schemas. Quirks: `integer`
+  is flaky → coerce to `number`; strip unsupported JSON-Schema keywords
+  (`anyOf`/`oneOf`/`$ref`/`format`/min/max/`additionalProperties`) or apfel 400s
+  with "Failed to deserialize Generable"; mark kept fields **required** so optional
+  args (e.g. `edit.old_str`) are actually filled.
+- **Advertise a large prompt window** to Copilot CLI
+  (`COPILOT_PROVIDER_MAX_PROMPT_TOKENS=120000`, default in both launchers). A small
+  value makes the CLI panic-compact (auto-summarise) every turn. The proxy hides
+  the real 4096 and fits everything internally.
+
 ## BYOK env contract (must stay in sync across both launchers)
 
 Model id is `apple-foundationmodel`. Both launchers set:
@@ -47,9 +64,10 @@ Model id is `apple-foundationmodel`. Both launchers set:
 
 Proxy behaviour is tuned only through env vars (no config files): e.g.
 `APFEL_PROXY_PORT`, `APFEL_SYS_CHARS`, `APFEL_MSG_CHARS`, `APFEL_OUTPUT_CAP`
-(v1); `APFEL_MAX_TOOLS`, `APFEL_TOOL_TOKENS`, `APFEL_SYS_TOKENS`,
-`APFEL_HIST_TOKENS`, `APFEL_PROXY_V2_PORT` (v2). Runtime artifacts (transcript,
-dropped context, tool-selection log) are written to `~/.apfel-copilot/`.
+(v1); `APFEL_PROXY_V2_PORT`, `APFEL_MAX_TOOLS`, `APFEL_MAX_TOOL_CALLS`,
+`APFEL_TEMPERATURE`, `APFEL_SYS/HIST/TOOL/SCHEMA_TOKENS`, `APFEL_REPEAT_LIMIT`,
+`APFEL_DEBUG`, `APFEL_CAPTURE` (v2). Runtime artifacts (transcript, dropped
+context, tool-selection log) are written to `~/.apfel-copilot/`.
 
 ## PowerShell conventions (enforced)
 

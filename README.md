@@ -4,17 +4,20 @@
 
 <h1 align="center">apfel-copilot</h1>
 
-<p align="center">Make GitHub Copilot CLI talk to <b>apfel</b> (Apple on-device LLM) instead of cloud.</p>
+<p align="center">Run GitHub Copilot CLI as a real agent against <b>apfel</b> (Apple on-device LLM) instead of the cloud.</p>
 
 ## What
 
-Copilot CLI supports BYOK (bring your own model), and [apfel](https://github.com/Arthur-Ficial/apfel) runs a local OpenAI-compatible server. This project wires the two together.
+Copilot CLI supports BYOK (bring your own model), and [apfel](https://github.com/Arthur-Ficial/apfel) runs Apple's on-device model as a local OpenAI-compatible server. This project wires the two together so the whole agent — file edits, shell, search — runs on your Mac, offline.
 
-The catch: apfel's context is **4096 tokens**, but a Copilot request is **~107k tokens** (226 tool schemas + a big system prompt). It doesn't fit.
+The catch: apfel's context is **4096 tokens**, but a raw Copilot request is **~107k tokens** (226 tool schemas + a big system prompt). It does not fit.
 
-The fix: `apfel_proxy.py` sits in the middle. It strips tools, trims the system prompt, and rolls history out to files, shrinking each request from ~107k down to ~2k so it fits.
+The fix: a proxy sits in the middle and fits every request into 4096. Two versions:
 
-The trade-off: with tools stripped, you get **chat only** - no file edits, no shell agent.
+- **v2 (default) — full agent.** Instead of stripping tools, it drives them with apfel's `json_schema` response format (Apple **guided generation** = forced valid output). Per turn it routes (does this need a tool?), picks the tool, fills the args under a constrained schema, then hands Copilot CLI clean OpenAI `tool_calls`. Real file edits and shell.
+- **v1 — chat only.** Strips tools, trims the prompt. Plain conversation, no agent. Kept as a fallback.
+
+Honest caveat: the on-device model is small. The agent **structure** is reliable (valid tool calls, right files), but answer **quality** is model-limited — it can miscount or summarise weakly. Good for local, private, offline work; not GPT-class.
 
 ## Pre-reqs
 
@@ -27,39 +30,62 @@ The trade-off: with tools stripped, you get **chat only** - no file edits, no sh
 
 ## Use
 
+Both launchers default to **v2 (full agent)**, auto-start apfel + proxy, set BYOK env, run copilot.
+
 Bash:
 
 ```bash
-./copilot-apfel.sh -p "your prompt"
+./copilot-apfel.sh -p "list the .py files and tell me which is biggest"
 ./copilot-apfel.sh                  # interactive
+APFEL_PROXY_VARIANT=v1 ./copilot-apfel.sh -p "explain TCP/IP"   # legacy chat
 ```
 
 PowerShell:
 
 ```powershell
-./copilot-apfel.ps1 -Prompt "your prompt"
+./copilot-apfel.ps1 -Prompt "list the .py files and tell me which is biggest"
 ./copilot-apfel.ps1                       # interactive
+./copilot-apfel.ps1 -ProxyVariant v1 -Prompt "explain TCP/IP"   # legacy chat
 ```
 
-Both: auto-start apfel + proxy, set BYOK env, run copilot.
+For the agent to actually edit / run things, pass Copilot's allow flags:
+
+```bash
+./copilot-apfel.sh --allow-all --allow-all-paths -p "in config.py set DEBUG=False"
+```
+
+## How v2 fits 4096
+
+1. **Clean** the incoming Copilot request (drop wrapper blocks, restate the real ask, grab cwd).
+2. **Select** a small set of tools — always seed the core ones (bash/view/edit/grep/glob/create), add lexical matches up to `APFEL_MAX_TOOLS`.
+3. **Route** with a constrained boolean + tool-enum schema (few-shot planner, no giant system prompt → not tool-trigger-happy).
+4. **Fill args** with a flat per-tool schema; all kept fields marked required so guided generation fills every one. Integer fields coerced to number (Apple quirk). Execution-control noise dropped.
+5. **Synthesise** proper OpenAI `tool_calls` (stream + non-stream). Loop guards (`_recent_calls`, `MAX_TOOL_CALLS`) stop repeat spirals.
+
+The proxy advertises a **large** prompt window to Copilot CLI (`120000`) so the CLI never panic-compacts; it fits everything to 4096 internally.
 
 ## Knobs (env)
 
 | Var | Default | Means |
 |-----|---------|-------|
 | `APFEL_URL` | `http://localhost:11434/v1` | apfel server |
-| `APFEL_PROXY_PORT` | `8898` | proxy port |
-| `APFEL_SYS_CHARS` | `8000` | system prompt cap |
-| `APFEL_MSG_CHARS` | `5000` | history window cap |
-| `APFEL_OUTPUT_CAP` | `400` | max output tokens |
+| `APFEL_PROXY_VARIANT` | `v2` | `v1` (chat) or `v2` (agent) |
+| `APFEL_PROXY_PORT` | `8899` v2 / `8898` v1 | proxy port |
+| `MAX_PROMPT_TOKENS` | `120000` | window advertised to CLI (stops auto-compact) |
+| `APFEL_MAX_TOOLS` | `8` | v2: tools selected per turn |
+| `APFEL_MAX_TOOL_CALLS` | `8` | v2: agent-loop circuit breaker |
+| `APFEL_TEMPERATURE` | `0.0` | v2 sampling |
+| `APFEL_DEBUG` | off | v2: log each turn's route/args |
+| `APFEL_CAPTURE` | off | v2: dump raw requests to disk |
 
-PowerShell flags: `-ApfelUrl`, `-ProxyPort`, `-Model`, `-MaxPromptTokens`, `-MaxOutputTokens`.
+PowerShell flags: `-ProxyVariant`, `-MaxTools`, `-ApfelUrl`, `-ProxyPort`, `-Model`, `-MaxPromptTokens`, `-MaxOutputTokens`.
 
 ## Files
 
 | File | Job |
 |------|-----|
-| `apfel_proxy.py` | shrink each req to fit 4096, log history |
+| `apfel_proxy_v2.py` | **default** — constrained-decoding agent bridge |
+| `apfel_proxy.py` | legacy — chat only, strips tools |
 | `copilot-apfel.sh` | bash launcher |
 | `copilot-apfel.ps1` | PowerShell launcher |
 
@@ -68,51 +94,13 @@ PowerShell flags: `-ApfelUrl`, `-ProxyPort`, `-Model`, `-MaxPromptTokens`, `-Max
 `~/.apfel-copilot/`
 - `transcript.jsonl` = full history, nothing lost
 - `dropped-context.jsonl` = turns trimmed off wire
+- `tool-selection.jsonl` = which tools got picked per turn
 
 ## Limit
 
-4096 too small for full agent. Chat works. Tools no. That = Apple cap, not bug.
-
-## v2 (experimental) - full agent attempt
-
-`apfel_proxy_v2.py` = keep tools alive via dynamic selection instead of stripping.
-
-How: per turn, pick top-K relevant tools from the 226 (lexical tool-RAG), trim
-system + history, forward only the slim set. Tools run CLI-side, model just emits
-the call. Logs picks to `~/.apfel-copilot/tool-selection.jsonl`.
-
-Run:
-
-```bash
-APFEL_MAX_TOOLS=8 python3 apfel_proxy_v2.py   # port 8899
-# point Copilot CLI BYOK at http://localhost:8899/v1, tools enabled
-```
-
-Or via PowerShell launcher (auto-starts v2 on port 8899):
-
-```powershell
-./copilot-apfel.ps1 -ProxyVariant v2 -MaxTools 4
-```
-
-(bash launcher = v1 only; use the raw `python3 apfel_proxy_v2.py` command above.)
-
-Knobs: `APFEL_PROXY_V2_PORT`, `APFEL_MAX_TOOLS`, `APFEL_TOOL_TOKENS`,
-`APFEL_SYS_TOKENS`, `APFEL_HIST_TOKENS`, `APFEL_OUTPUT_CAP`.
-
-**Status: plumbing works, model does not.** Proven: 226 tools -> 1-8 selected,
-fits 4096, streaming + agent loop reach the model. BUT `apple-foundationmodel`:
-- invents tool names not in the set (`ls`, `echo`)
-- emits `arguments` as array, not object -> CLI rejects
-- echoes the tool-format text, drifts off-task
-- fails even at `MAX_TOOLS=1`
-
-Also some single tool schemas (e.g. `session_store_sql` ~4158 tok) exceed 4096
-alone. Verdict: on-device 3B model can't reliably drive the agent protocol.
-Needs constrained/grammar decoding or a stronger model. Use v1 chat for now.
+4096 is tiny. v2 makes the agent **work** by constraining the model instead of trusting it — structure is solid, but a 3B on-device model won't match a frontier model on hard reasoning. That's the Apple cap, not a bug.
 
 ## Credits
 
-Built on [apfel](https://github.com/Arthur-Ficial/apfel) by Arthur-Ficial - the
+Built on [apfel](https://github.com/Arthur-Ficial/apfel) by Arthur-Ficial — the
 UNIX tool + OpenAI-compatible server for Apple's on-device FoundationModels.
-
-
