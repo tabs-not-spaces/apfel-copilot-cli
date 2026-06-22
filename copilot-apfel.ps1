@@ -53,6 +53,11 @@
     Convenience prompt forwarded to Copilot CLI as `copilot -p <Prompt>`
     (non-interactive). Omit for an interactive session.
 
+.PARAMETER Yolo
+    Auto-approve everything: injects `--allow-all --allow-all-paths` so the agent
+    edits files and runs commands without prompting. Combine with -Prompt for a
+    one-shot, or omit -Prompt for an interactive YOLO session.
+
 .PARAMETER CopilotArgs
     Additional arguments passed verbatim to the `copilot` executable, appended
     after any -Prompt mapping (e.g. -CopilotArgs '--allow-all-tools').
@@ -68,6 +73,9 @@
 
 .EXAMPLE
     ./copilot-apfel.ps1            # interactive session
+
+.EXAMPLE
+    ./copilot-apfel.ps1 -Yolo     # interactive, auto-approve all tools/paths
 #>
 [CmdletBinding()]
 param(
@@ -98,6 +106,9 @@ param(
     [Parameter()]
     [ValidateRange(1, 4096)]
     [int] $MaxOutputTokens = 512,
+
+    [Parameter()]
+    [switch] $Yolo,
 
     [Parameter()]
     [ValidateNotNullOrEmpty()]
@@ -357,6 +368,9 @@ function Invoke-CopilotApfel {
         [string] $Prompt,
 
         [Parameter()]
+        [switch] $Yolo,
+
+        [Parameter()]
         [AllowEmptyCollection()]
         [string[]] $CopilotArgs = @()
     )
@@ -400,6 +414,11 @@ function Invoke-CopilotApfel {
     Set-CopilotProviderEnvironment @providerParams
 
     $invocationArgs = [System.Collections.Generic.List[string]]::new()
+    if ($Yolo) {
+        # YOLO: auto-approve every tool and path so the agent runs unattended.
+        $invocationArgs.Add('--allow-all')
+        $invocationArgs.Add('--allow-all-paths')
+    }
     if (-not [string]::IsNullOrWhiteSpace($Prompt)) {
         $invocationArgs.Add('-p')
         $invocationArgs.Add($Prompt)
@@ -436,6 +455,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         MaxPromptTokens = $MaxPromptTokens
         MaxOutputTokens = $MaxOutputTokens
         Prompt          = $Prompt
+        Yolo            = $Yolo
         CopilotArgs     = $CopilotArgs
     }
     $exitCode = Invoke-CopilotApfel @invokeParams

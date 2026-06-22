@@ -34,6 +34,10 @@
 #   APFEL_PROXY_PORT     proxy port              (default 8899 for v2, 8898 for v1)
 #   APFEL_MAX_TOOLS      v2 tool-RAG cap         (default 8)
 #   MAX_PROMPT_TOKENS    window advertised to CLI (default 120000)
+#
+# Flags consumed by this launcher (everything else is passed to copilot):
+#   --yolo               auto-approve all tools/paths (--allow-all --allow-all-paths).
+#                        Also enabled with APFEL_YOLO=1.
 
 set -euo pipefail
 
@@ -41,6 +45,17 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APFEL_URL="${APFEL_URL:-http://localhost:11434/v1}"
 APFEL_MODEL="apple-foundationmodel"
 VARIANT="${APFEL_PROXY_VARIANT:-v2}"
+
+# Consume launcher-only flags, leaving the rest for copilot.
+YOLO="${APFEL_YOLO:-0}"
+COPILOT_PASSTHROUGH=()
+for arg in "$@"; do
+  if [[ "${arg}" == "--yolo" ]]; then
+    YOLO=1
+  else
+    COPILOT_PASSTHROUGH+=("${arg}")
+  fi
+done
 
 if [[ "${VARIANT}" == "v2" ]]; then
   PROXY_SCRIPT="apfel_proxy_v2.py"
@@ -87,4 +102,9 @@ export COPILOT_PROVIDER_MAX_PROMPT_TOKENS="${MAX_PROMPT_TOKENS}"
 export COPILOT_PROVIDER_MAX_OUTPUT_TOKENS="512"
 export COPILOT_OFFLINE="1"                      # skip GitHub auth/telemetry/web/auto-update
 
-exec copilot "$@"
+YOLO_ARGS=()
+if [[ "${YOLO}" == "1" ]]; then
+  YOLO_ARGS=(--allow-all --allow-all-paths)
+fi
+
+exec copilot ${YOLO_ARGS[@]+"${YOLO_ARGS[@]}"} ${COPILOT_PASSTHROUGH[@]+"${COPILOT_PASSTHROUGH[@]}"}

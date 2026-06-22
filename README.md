@@ -49,15 +49,18 @@ up to ~30s for it). Leave the session open — keeping it running keeps apfel + 
 proxy warm, so later turns are fast.
 
 **Interactive + YOLO** (auto-approve every tool, no prompts — the agent edits and
-runs freely). Omit `-p`/`-Prompt` and pass the allow flags:
+runs freely):
 
 ```bash
-./copilot-apfel.sh --allow-all --allow-all-paths           # bash, interactive yolo
+./copilot-apfel.sh --yolo                  # bash, interactive yolo
 ```
 
 ```powershell
-./copilot-apfel.ps1 -CopilotArgs '--allow-all','--allow-all-paths'   # PowerShell, interactive yolo
+./copilot-apfel.ps1 -Yolo                  # PowerShell, interactive yolo
 ```
+
+`--yolo` / `-Yolo` just injects `--allow-all --allow-all-paths`. Add a prompt for a
+one-shot: `./copilot-apfel.ps1 -Yolo -Prompt "in config.py set DEBUG=False"`.
 
 ### One-shot prompt
 
@@ -73,15 +76,16 @@ APFEL_PROXY_VARIANT=v1 ./copilot-apfel.sh -p "explain TCP/IP"   # legacy chat
 
 ### Let the agent edit / run things
 
-Pass Copilot's allow flags. In PowerShell they go through `-CopilotArgs` (a bare
+Use `--yolo` / `-Yolo` (auto-approve all tools + paths), or pass Copilot's allow
+flags yourself. In PowerShell raw flags go through `-CopilotArgs` (a bare
 `--allow-all-paths` would otherwise bind to `-ProxyPort`):
 
 ```bash
-./copilot-apfel.sh --allow-all --allow-all-paths -p "in config.py set DEBUG=False"
+./copilot-apfel.sh --yolo -p "in config.py set DEBUG=False"
 ```
 
 ```powershell
-./copilot-apfel.ps1 -Prompt "in config.py set DEBUG=False" -CopilotArgs '--allow-all','--allow-all-paths'
+./copilot-apfel.ps1 -Yolo -Prompt "in config.py set DEBUG=False"
 ```
 
 ## How v2 fits 4096
