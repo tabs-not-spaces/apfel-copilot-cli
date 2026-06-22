@@ -60,7 +60,7 @@ MAX_PROMPT_TOKENS="${MAX_PROMPT_TOKENS:-120000}"
 if ! curl -s -m 3 "${APFEL_URL}/models" >/dev/null 2>&1; then
   echo "apfel server not up; starting 'apfel --serve'..." >&2
   apfel --serve >/tmp/apfel-serve.log 2>&1 &
-  for _ in $(seq 1 15); do
+  for _ in $(seq 1 30); do
     sleep 1
     curl -s -m 3 "${APFEL_URL}/models" >/dev/null 2>&1 && break
   done

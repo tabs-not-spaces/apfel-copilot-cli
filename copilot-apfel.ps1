@@ -202,7 +202,8 @@ function Start-ApfelServer {
         }
         Start-Process @startParams | Out-Null
 
-        if (-not (Wait-ApfelEndpoint -BaseUrl $BaseUrl)) {
+        # Cold model load can take a while; give apfel a generous readiness budget.
+        if (-not (Wait-ApfelEndpoint -BaseUrl $BaseUrl -MaxAttempts 30)) {
             throw "apfel server did not become ready at $BaseUrl."
         }
     }

@@ -32,26 +32,45 @@ Honest caveat: the on-device model is small. The agent **structure** is reliable
 
 Both launchers default to **v2 (full agent)**, auto-start apfel + proxy, set BYOK env, run copilot.
 
-Bash:
+### Interactive (REPL)
+
+Omit the prompt — you drop into an interactive Copilot CLI session against apfel:
+
+```bash
+./copilot-apfel.sh                  # bash, v2 agent
+```
+
+```powershell
+./copilot-apfel.ps1                 # PowerShell, v2 agent
+```
+
+First launch is slower: apfel cold-loads the on-device model (the launchers wait
+up to ~30s for it). Leave the session open — keeping it running keeps apfel + the
+proxy warm, so later turns are fast.
+
+### One-shot prompt
 
 ```bash
 ./copilot-apfel.sh -p "list the .py files and tell me which is biggest"
-./copilot-apfel.sh                  # interactive
 APFEL_PROXY_VARIANT=v1 ./copilot-apfel.sh -p "explain TCP/IP"   # legacy chat
 ```
 
-PowerShell:
-
 ```powershell
 ./copilot-apfel.ps1 -Prompt "list the .py files and tell me which is biggest"
-./copilot-apfel.ps1                       # interactive
 ./copilot-apfel.ps1 -ProxyVariant v1 -Prompt "explain TCP/IP"   # legacy chat
 ```
 
-For the agent to actually edit / run things, pass Copilot's allow flags:
+### Let the agent edit / run things
+
+Pass Copilot's allow flags. In PowerShell they go through `-CopilotArgs` (a bare
+`--allow-all-paths` would otherwise bind to `-ProxyPort`):
 
 ```bash
 ./copilot-apfel.sh --allow-all --allow-all-paths -p "in config.py set DEBUG=False"
+```
+
+```powershell
+./copilot-apfel.ps1 -Prompt "in config.py set DEBUG=False" -CopilotArgs '--allow-all','--allow-all-paths'
 ```
 
 ## How v2 fits 4096
