@@ -48,6 +48,17 @@ First launch is slower: apfel cold-loads the on-device model (the launchers wait
 up to ~30s for it). Leave the session open — keeping it running keeps apfel + the
 proxy warm, so later turns are fast.
 
+**Interactive + YOLO** (auto-approve every tool, no prompts — the agent edits and
+runs freely). Omit `-p`/`-Prompt` and pass the allow flags:
+
+```bash
+./copilot-apfel.sh --allow-all --allow-all-paths           # bash, interactive yolo
+```
+
+```powershell
+./copilot-apfel.ps1 -CopilotArgs '--allow-all','--allow-all-paths'   # PowerShell, interactive yolo
+```
+
 ### One-shot prompt
 
 ```bash
