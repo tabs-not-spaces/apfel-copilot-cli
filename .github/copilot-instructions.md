@@ -82,6 +82,11 @@ context, tool-selection log) are written to `~/.apfel-copilot/`.
 - `Write-Information`, not `Write-Host`.
 - A dot-source guard (`if ($MyInvocation.InvocationName -ne '.')`) gates the
   entry point so functions can be dot-sourced and unit-tested.
+- **Never run `copilot` inside a captured function call.** `$x = Invoke-Fn` (or
+  any pipeline capture) buffers the interactive TUI's stdout and the session
+  freezes. `Initialize-CopilotApfel` does all setup and *returns the argument
+  vector*; the entry point runs `& copilot @args; exit $LASTEXITCODE` at script
+  scope so copilot inherits the real console.
 - Do not expose a `-p` parameter — it collides with `-ProxyPort`. The prompt is
   surfaced as `-Prompt` and translated to `copilot -p` internally; raw passthrough
   goes through `-CopilotArgs`.

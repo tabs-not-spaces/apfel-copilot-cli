@@ -327,13 +327,22 @@ function Set-CopilotProviderEnvironment {
     $env:COPILOT_OFFLINE                    = '1'             # skip GitHub auth/telemetry/web/auto-update
 }
 
-function Invoke-CopilotApfel {
+function Initialize-CopilotApfel {
     <#
     .SYNOPSIS
-        Orchestrates apfel + proxy startup, BYOK config, and the copilot call.
+        Orchestrates apfel + proxy startup and BYOK config, then returns the
+        argument vector for `copilot`.
+
+    .DESCRIPTION
+        Does every side effect EXCEPT launching copilot: starts the apfel server
+        and proxy, exports the BYOK environment, and builds the copilot argument
+        list. It deliberately does not call copilot, so the caller can invoke it
+        at script scope where it inherits the real console. Running an interactive
+        TUI inside a captured function call (`$x = Invoke-...`) makes PowerShell
+        buffer the child's stdout and the session appears to freeze.
     #>
     [CmdletBinding(SupportsShouldProcess)]
-    [OutputType([int])]
+    [OutputType([string[]])]
     param(
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
@@ -427,8 +436,7 @@ function Invoke-CopilotApfel {
         $invocationArgs.AddRange($CopilotArgs)
     }
 
-    & copilot @invocationArgs
-    return $LASTEXITCODE
+    return $invocationArgs.ToArray()
 }
 
 # Entry point: only run when invoked as a script (not when dot-sourced for tests).
@@ -458,6 +466,11 @@ if ($MyInvocation.InvocationName -ne '.') {
         Yolo            = $Yolo
         CopilotArgs     = $CopilotArgs
     }
-    $exitCode = Invoke-CopilotApfel @invokeParams
-    exit $exitCode
+    $copilotInvocation = Initialize-CopilotApfel @invokeParams
+
+    # Run copilot at script scope so it inherits the real console. Doing this
+    # inside a captured function call would buffer the interactive TUI's output
+    # and lock the session.
+    & copilot @copilotInvocation
+    exit $LASTEXITCODE
 }
